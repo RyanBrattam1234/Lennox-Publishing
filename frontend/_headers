@@ -23,3 +23,6 @@
 /offline.html
   Cache-Control: no-cache
   X-Robots-Tag: noindex, nofollow
+/offline
+  Cache-Control: no-cache
+  X-Robots-Tag: noindex, nofollow

@@ -1,8 +1,8 @@
 /* Only public, fixed assets belong in this cache. No posts or editor data. */
 const CACHE_PREFIX = 'lennox-public-shell-';
-const CACHE_NAME = CACHE_PREFIX + 'v1';
+const CACHE_NAME = CACHE_PREFIX + 'v2';
 const CORE_ASSETS = [
-  '/offline.html', '/styles.css', '/pwa.css', '/pwa.js',
+  '/offline', '/styles.css', '/pwa.css', '/pwa.js',
   '/assets/fonts/dm-sans-regular.ttf', '/assets/fonts/dm-sans-medium.ttf', '/assets/fonts/libre-caslon-display.ttf',
   '/apple-touch-icon.png', '/assets/icons/icon-192.png'
 ];
@@ -42,7 +42,7 @@ async function navigate(request) {
     return await fetch(request);
   } catch {
     const cache = await caches.open(CACHE_NAME);
-    const fallback = await cache.match('/offline.html');
+    const fallback = await cache.match('/offline');
     return fallback || new Response('Du bist offline. Bitte verbinde dich mit dem Internet und lade die Seite neu.', {
       status:503, headers:{'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'}
     });

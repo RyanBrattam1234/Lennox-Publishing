@@ -37,10 +37,10 @@ test('Manifest, touch icon, app scope and page metadata are usable from every en
 test('Offline shell includes only existing public assets and activation preserves unrelated caches',async()=>{
   const w=workerHarness();await w.lifecycle('install');
   assert.ok(w.calls.length>0);
-  for(const call of w.calls){const url=new URL(call.url);assert.ok(!url.pathname.startsWith('/api/'));assert.equal(call.credentials,'omit');readFileSync(new URL(url.pathname.slice(1),frontend));}
-  const store=w.stores.get('lennox-public-shell-v1');assert.ok(store.has(origin+'/offline.html'));assert.ok(store.has(origin+'/pwa.js'));
-  await w.caches.open('lennox-public-shell-old');await w.caches.open('other-app-cache');await w.lifecycle('activate');
-  assert.ok(!w.stores.has('lennox-public-shell-old'));assert.ok(w.stores.has('other-app-cache'));assert.ok(w.claimed);
+  for(const call of w.calls){const url=new URL(call.url);assert.ok(!url.pathname.startsWith('/api/'));assert.equal(call.credentials,'omit');readFileSync(new URL(url.pathname==='/offline'?'offline.html':url.pathname.slice(1),frontend));}
+  const store=w.stores.get('lennox-public-shell-v2');assert.ok(store.has(origin+'/offline'));assert.ok(store.has(origin+'/pwa.js'));
+  await w.caches.open('lennox-public-shell-v1');await w.caches.open('other-app-cache');await w.lifecycle('activate');
+  assert.ok(!w.stores.has('lennox-public-shell-v1'));assert.ok(w.stores.has('other-app-cache'));assert.ok(w.claimed);
 });
 
 test('API, authentication, private images and write requests never enter the worker cache',async()=>{
@@ -52,15 +52,15 @@ test('API, authentication, private images and write requests never enter the wor
 test('Fresh styles win online, cached public assets work offline, and no-store responses are not cached',async()=>{
   const w=workerHarness();await w.lifecycle('install');w.setBody('updated styles');assert.equal(await(await w.request('/styles.css')).text(),'updated styles');
   w.setOffline(true);assert.equal(await(await w.request('/styles.css')).text(),'updated styles');
-  w.setOffline(false);w.setNoStore(true);w.setBody('do not cache');assert.equal(await(await w.request('/blog.css')).text(),'do not cache');assert.ok(!w.stores.get('lennox-public-shell-v1').has(origin+'/blog.css'));
+  w.setOffline(false);w.setNoStore(true);w.setBody('do not cache');assert.equal(await(await w.request('/blog.css')).text(),'do not cache');assert.ok(!w.stores.get('lennox-public-shell-v2').has(origin+'/blog.css'));
 });
 
 test('Articles and authenticated HTML are never saved; offline navigation gets only the generic fallback',async()=>{
-  const w=workerHarness();await w.lifecycle('install');const store=w.stores.get('lennox-public-shell-v1');
+  const w=workerHarness();await w.lifecycle('install');const store=w.stores.get('lennox-public-shell-v2');
   w.setBody('private editor or current article');assert.equal(await(await w.request('/blog-creator/',{navigate:true})).text(),'private editor or current article');assert.equal(await(await w.request('/blog/example',{navigate:true})).text(),'private editor or current article');
   assert.ok(!store.has(origin+'/blog-creator/'));assert.ok(!store.has(origin+'/blog/example'));
   store.set(origin+'/blog/example',new Response('old article must never be returned'));
-  const fallback=await(await(await w.caches.open('lennox-public-shell-v1')).match('/offline.html')).text();w.setOffline(true);
+  const fallback=await(await(await w.caches.open('lennox-public-shell-v2')).match('/offline')).text();w.setOffline(true);
   assert.equal(await(await w.request('/blog/example',{navigate:true})).text(),fallback);assert.equal(await(await w.request('/blog-creator/',{navigate:true})).text(),fallback);
 });
 
