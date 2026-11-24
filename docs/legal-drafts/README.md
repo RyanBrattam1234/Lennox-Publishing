@@ -1,5 +1,5 @@
-# Archivierte Entwürfe
+# Frühere Entwürfe
 
-Diese HTML-Dateien enthalten die vor der aktuellen Überarbeitung vorhandenen Entwürfe von Impressum und Datenschutzhinweisen. Sie werden nicht aus `dist/` bereitgestellt und gehören nicht zur Netlify-Veröffentlichung.
+Diese HTML-Dateien archivieren frühere Stände. Sie gehören nicht zum Website-Build in `dist/`.
 
-Die Texte wurden auf Wunsch vorübergehend deaktiviert. Vor einer erneuten Verwendung sind die Angaben und Platzhalter zu vervollständigen und auf die dann tatsächlich verwendete Hosting- und Kontaktkonfiguration anzupassen.
+Die aktuelle, ausdrücklich vorläufige Datenschutzerklärung steht in `dist/datenschutz.html`. Das Impressum bleibt vorübergehend deaktiviert. Frühere Entwürfe dürfen nicht ungeprüft wieder veröffentlicht werden; darin enthaltene Hosting- und Formularangaben können veraltet sein.
