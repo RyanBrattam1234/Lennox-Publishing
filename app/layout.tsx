@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Lennox Publishing – Galaxie Verlag",
+  title: "Lennox Publishing – Verlag Neue Galaxie",
   description: "Bücher, Geschichten und Neuigkeiten von Lennox Publishing.",
   icons: {
     icon: "/favicon.svg",

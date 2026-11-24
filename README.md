@@ -1,4 +1,6 @@
-# Lennox Publishing · Galaxie Verlag
+# Lennox Publishing · Verlag Neue Galaxie
+
+Autorenauftritt von **Lennox Berg**, der nach Angabe des Auftraggebers zum **Verlag Neue Galaxie** gehört. Lennox Publishing ist die Autorenmarke dieser Website. Verlagswebsite: https://maggieforeverywhere.com/neue-galaxie-verlag.html
 
 Website mit zwei Buchprojekten und einem geschützten **Blog Creator**. Die öffentliche Website bleibt unter https://lennox-publishing.netlify.app erreichbar.
 
