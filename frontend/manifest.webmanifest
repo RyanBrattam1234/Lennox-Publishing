@@ -1,0 +1,22 @@
+{
+  "id": "/",
+  "name": "Lennox Publishing",
+  "short_name": "Lennox",
+  "description": "Buchprojekte und Geschichten von Lennox Berg – Autor im Verlag Neue Galaxie.",
+  "lang": "de",
+  "dir": "ltr",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#101e2b",
+  "theme_color": "#101e2b",
+  "icons": [
+    { "src": "/assets/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/assets/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Bücher entdecken", "short_name": "Bücher", "url": "/#buecher" },
+    { "name": "Lennox Journal", "short_name": "Blog", "url": "/blog" }
+  ]
+}

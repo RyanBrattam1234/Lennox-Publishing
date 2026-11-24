@@ -2,6 +2,34 @@ import { renderMarkdown } from '/blog-format.mjs';
 const $=id=>document.getElementById(id);
 let posts=[],current=null,filter='all',dirty=false,busy=false,pendingImage=null,imageUrl=null,coverImageId=null;
 const fields={title:$('post-title'),excerpt:$('post-excerpt'),body:$('post-body')};
+const editorViewport=window.matchMedia('(max-width: 720px), (pointer: coarse) and (max-height: 550px) and (max-width: 1024px)');
+function setPostPanelOpen(open){
+  document.querySelector('.creator-sidebar').dataset.postsOpen=String(open);
+  $('toggle-posts').setAttribute('aria-expanded',String(open));
+  $('toggle-posts').textContent=open?'Beiträge ausblenden':'Beiträge anzeigen';
+}
+function focusEditor(){
+  if(!editorViewport.matches)return;
+  setPostPanelOpen(false);
+  document.querySelector('.creator-editor').scrollIntoView({block:'start',behavior:window.matchMedia('(prefers-reduced-motion: reduce)').matches?'instant':'smooth'});
+  $('editor-title').tabIndex=-1;$('editor-title').focus({preventScroll:true});
+}
+$('toggle-posts').addEventListener('click',()=>setPostPanelOpen($('toggle-posts').getAttribute('aria-expanded')!=='true'));
+editorViewport.addEventListener('change',()=>setPostPanelOpen(!editorViewport.matches));
+setPostPanelOpen(!editorViewport.matches);
+window.addEventListener('lennox:request-refresh',event=>{
+  if(busy||(dirty&&!confirm('Du hast ungespeicherte Änderungen. Trotzdem neu laden?'))){event.preventDefault();return;}
+  dirty=false;
+});
+document.addEventListener('click',event=>{
+  const link=event.target.closest?.('a[href]');
+  if(!link||link.target==='_blank'||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+  const url=new URL(link.href,location.href);
+  if(url.origin!==location.origin||url.pathname===location.pathname&&url.search===location.search)return;
+  if(busy||(dirty&&!confirm('Du hast ungespeicherte Änderungen. Möchtest du die Seite trotzdem verlassen?'))){event.preventDefault();return;}
+  dirty=false;
+});
+
 async function api(path,options={}){
   let response;try{response=await fetch(path,{credentials:'same-origin',cache:'no-store',...options});}catch{throw new Error('Die Verbindung ist unterbrochen. Bitte prüfe dein Internet und versuche es erneut.');}
   const data=await response.json().catch(()=>({}));
@@ -18,22 +46,22 @@ function editorState(){
   $('publish-post').textContent=online?'Änderungen veröffentlichen':'Veröffentlichen';$('save-draft').textContent=online?'Offline nehmen & speichern':'Entwurf speichern';$('delete-post').hidden=!current;$('public-link').hidden=!online;if(online)$('public-link').href='/blog/'+current.slug;
 }
 function openPost(post){
-  if(busy)return;if(dirty&&!confirm('Du hast ungespeicherte Änderungen. Möchtest du sie verwerfen?'))return;
+  if(busy)return false;if(dirty&&!confirm('Du hast ungespeicherte Änderungen. Möchtest du sie verwerfen?'))return false;
   current=post?{...post}:null;dirty=false;pendingImage=null;coverImageId=post?.coverImageId||null;clearImageUrl();imageUrl=coverImageId?'/api/admin/images/'+coverImageId:null;displayImage(imageUrl);$('cover-file').value='';
   Object.entries(fields).forEach(([key,input])=>{input.value=post?.[key]||'';});$('feedback').hidden=true;
-  $('save-note').textContent=post?'Zuletzt gespeichert: '+new Intl.DateTimeFormat('de-DE',{dateStyle:'medium',timeStyle:'short'}).format(post.updatedAt):'Dein Text wird erst gespeichert, wenn du einen der Speicherbuttons anklickst.';editorState();renderList();
+  $('save-note').textContent=post?'Zuletzt gespeichert: '+new Intl.DateTimeFormat('de-DE',{dateStyle:'medium',timeStyle:'short'}).format(post.updatedAt):'Dein Text wird erst gespeichert, wenn du einen der Speicherbuttons anklickst.';editorState();renderList();return true;
 }
 function renderList(){
   const query=$('post-search').value.toLowerCase(),visible=posts.filter(p=>(filter==='all'||p.status===filter)&&(p.title+' '+p.excerpt).toLowerCase().includes(query));$('post-count').textContent=posts.length===1?'1 Beitrag':`${posts.length} Beiträge`;
   const list=$('post-list');list.replaceChildren();
   if(!visible.length){const p=document.createElement('p');p.className='sidebar-empty';p.textContent=posts.length?'Keine passenden Beiträge gefunden.':'Dein erster Beitrag beginnt hier. Klicke auf „Neuer Beitrag“ und leg los.';list.append(p);}
-  for(const p of visible){const button=document.createElement('button');button.type='button';button.className='post-list-item';button.classList.toggle('active',p.id===current?.id);button.setAttribute('aria-pressed',String(p.id===current?.id));const title=document.createElement('strong');title.textContent=p.title;const meta=document.createElement('span');meta.className='post-list-meta';const status=document.createElement('span');status.textContent=p.status==='published'?'Online':'Entwurf';status.className=p.status;const date=document.createElement('span');date.textContent=new Intl.DateTimeFormat('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'}).format(p.updatedAt);meta.append(status,date);button.append(title,meta);button.addEventListener('click',()=>openPost(p));list.append(button);}
+  for(const p of visible){const button=document.createElement('button');button.type='button';button.className='post-list-item';button.classList.toggle('active',p.id===current?.id);button.setAttribute('aria-pressed',String(p.id===current?.id));const title=document.createElement('strong');title.textContent=p.title;const meta=document.createElement('span');meta.className='post-list-meta';const status=document.createElement('span');status.textContent=p.status==='published'?'Online':'Entwurf';status.className=p.status;const date=document.createElement('span');date.textContent=new Intl.DateTimeFormat('de-DE',{day:'2-digit',month:'2-digit',year:'2-digit'}).format(p.updatedAt);meta.append(status,date);button.append(title,meta);button.addEventListener('click',()=>{if(openPost(p))focusEditor();});list.append(button);}
 }
 async function enterWorkspace(){const data=await api('/api/admin/posts');posts=data.posts;$('login-panel').hidden=true;$('loading').hidden=true;$('workspace').hidden=false;$('logout').hidden=false;$('account-settings').hidden=false;if(!dirty)openPost(current?posts.find(p=>p.id===current.id)||null:null);else renderList();}
 function setBusy(value){busy=value;document.querySelectorAll('#post-form button,#post-form input,#post-form textarea,#new-post,#delete-post,#logout,#account-settings').forEach(b=>{b.disabled=value;});$('post-form').setAttribute('aria-busy',String(value));}
 $('login-form').addEventListener('submit',async event=>{event.preventDefault();const button=event.currentTarget.querySelector('button');button.disabled=true;button.textContent='Wird angemeldet …';$('login-error').hidden=true;try{await api('/api/auth/login',jsonOptions('POST',{username:$('username').value,password:$('password').value}));$('password').value='';await enterWorkspace();}catch(error){$('login-error').textContent=error.message;$('login-error').hidden=false;}finally{button.disabled=false;button.textContent='Anmelden';}});
 $('logout').addEventListener('click',async()=>{if(dirty&&!confirm('Du hast ungespeicherte Änderungen. Trotzdem abmelden?'))return;try{await api('/api/auth/logout',jsonOptions('POST',{}));dirty=false;openPost(null);posts=[];$('post-list').replaceChildren();showLogin();}catch(error){feedback(error.message,true);}});
-$('new-post').addEventListener('click',()=>{openPost(null);if(!dirty)fields.title.focus();});$('post-search').addEventListener('input',renderList);
+$('new-post').addEventListener('click',()=>{if(openPost(null)){if(editorViewport.matches)setPostPanelOpen(false);fields.title.focus();}});$('post-search').addEventListener('input',renderList);
 document.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{filter=button.dataset.filter;document.querySelectorAll('[data-filter]').forEach(b=>{b.classList.toggle('active',b===button);b.setAttribute('aria-pressed',String(b===button));});renderList();}));
 Object.values(fields).forEach(input=>input.addEventListener('input',markDirty));window.addEventListener('beforeunload',event=>{if(dirty){event.preventDefault();event.returnValue='';}});
 async function optimizeImage(file){

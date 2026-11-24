@@ -69,3 +69,14 @@ Ein Push ins verbundene GitHub-Repository aktualisiert das statische Netlify-Fro
 - Es gibt keine eingebauten Analyse- oder Marketingdienste. Das optionale Hinweis-Cookie `lennox_privacy_notice` wird nur nach ausdrücklicher Auswahl für bis zu 180 Tage gesetzt. Das notwendige Login-Cookie wird separat erklärt und über Abmelden beendet.
 
 Der Blog beginnt ohne erfundene Beiträge. Die erste echte Veröffentlichung erfolgt durch die Redaktion. Eine Erreichbarkeitsprüfung oder ein erfolgreiches Deployment bestätigt keine rechtliche Vollständigkeit des Impressums oder Datenschutzentwurfs.
+
+
+## iPhone-Homescreen und mobile Nutzung
+
+Die Website hat ein Web-App-Manifest mit `display: standalone`, ein eigenes LP-App-Icon in Navy/Gold, ein Apple-Touch-Icon (180 × 180), PNG-Icons (192/512), eine maskierbare Variante und lokale Installationshinweise. In Safari: Teilen (ggf. zuerst „Mehr“) → „Zu Home-Bildschirm hinzufügen“ → „Als Web-App öffnen“ aktiviert lassen → „Hinzufügen“. Die veröffentlichte Netlify-Adresse verwenden.
+
+„Als App hinzufügen“ auf der Startseite und im Footer erklärt die Schritte. In unterstützenden Browsern kann auch deren Installationsdialog verwendet werden. In der gestarteten Web-App werden die Installationsknöpfe ausgeblendet und im Footer eine Aktualisierung angeboten. Der Vektor-Entwurf liegt in `frontend/assets/icons/app-icon.svg`; die vorhandene Libre-Caslon-Schrift liefert die LP-Konturen (OFL). `node scripts/generate-app-icons.mjs` erzeugt die eingecheckten PNG-Größen mit dem im Entwicklungstoolchain vorhandenen Sharp.
+
+Der Service Worker `/sw.js` wird beim normalen ersten Website-Aufruf nicht registriert, sondern erst beim Öffnen der Installationshilfe oder im installierten App-Modus. Er speichert nur eine feste Liste öffentlicher Assets und eine allgemeine Offline-Hinweisseite. HTML-Seiten, Blogbeiträge und sämtliche API-/Auth-/Upload-Antworten bleiben netzbasiert. API-Aufrufe und Schreibzugriffe werden nicht abgefangen. Das Dashboard wird nicht offline gespeichert, und es gibt keine Warteschlange für unveröffentlichte Texte. Der Browser kann den öffentlichen Cache über seine Website-Daten entfernen.
+
+Schriftgrößen und Touchflächen auf kleinen Bildschirmen, sichere Abstände zum Displayrand, mobile Dialoge und Tastaturfelder wurden angepasst. Die Beitragsliste im mobilen Blog Creator ist einklappbar. Ein Hinweis informiert bei fehlender Verbindung; Texte bleiben nur im geöffneten Editor-Tab erhalten, bis sie ausdrücklich online gespeichert werden. Ein Aktualisieren aus der Web-App und interne Seitenwechsel fragen bei ungespeicherten Änderungen nach.
