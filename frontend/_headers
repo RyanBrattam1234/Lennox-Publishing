@@ -1,0 +1,10 @@
+/impressum.html
+  Cache-Control: no-store
+  X-Robots-Tag: noindex, nofollow
+/datenschutz.html
+  Cache-Control: no-store
+  X-Robots-Tag: noindex, nofollow
+
+/blog-creator/*
+  Cache-Control: no-store
+  X-Robots-Tag: noindex, nofollow

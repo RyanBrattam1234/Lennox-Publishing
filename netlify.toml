@@ -1,5 +1,31 @@
 [build]
-  publish = "dist"
+  base = "frontend"
+  publish = "."
+  command = ""
+
+[[redirects]]
+  from = "/api/*"
+  to = "https://lennox-publishing-neugestaltung.cleanrowan2.chatgpt.site/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/blog"
+  to = "https://lennox-publishing-neugestaltung.cleanrowan2.chatgpt.site/blog"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/blog/*"
+  to = "https://lennox-publishing-neugestaltung.cleanrowan2.chatgpt.site/blog/:splat"
+  status = 200
+  force = true
+
+[[headers]]
+  for = "/blog-creator/*"
+  [headers.values]
+    Cache-Control = "no-store"
+    X-Robots-Tag = "noindex, nofollow"
 
 [[headers]]
   for = "/*"

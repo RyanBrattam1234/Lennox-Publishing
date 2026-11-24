@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { NOTICE_COOKIE, parseVisibleCookies, createNoticePreferences, noticeCookieString } from '../dist/privacy-storage.mjs';
+import { NOTICE_COOKIE, parseVisibleCookies, createNoticePreferences, noticeCookieString } from '../frontend/privacy-storage.mjs';
 
 function adapter(initial = '', blocked = false) {
   const values = new Map(parseVisibleCookies(initial).map(cookie => [cookie.name, cookie.value]));

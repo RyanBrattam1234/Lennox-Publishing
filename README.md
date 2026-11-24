@@ -1,96 +1,69 @@
 # Lennox Publishing · Galaxie Verlag
 
-Statische Autoren- und Verlagswebsite von Lennox Berg. Das vollständige Projekt ist direkt für Netlify vorbereitet: kein Build-Schritt, keine npm-Installation und keine Umgebungsvariablen erforderlich.
+Website mit zwei Buchprojekten und einem geschützten **Blog Creator**. Die öffentliche Website bleibt unter https://lennox-publishing.netlify.app erreichbar.
 
-## Auf Netlify veröffentlichen
+## Aufbau
 
-1. In Netlify **Add new project → Import an existing project** öffnen.
-2. **GitHub** auswählen und **RyanBrattam1234/Lennox-Publishing** verbinden.
-3. Den Branch **main** verwenden.
-4. **Build command leer lassen**, **Publish directory: `dist`**. Die beiliegende `netlify.toml` legt das Veröffentlichungsverzeichnis bereits fest.
-5. Das Projekt veröffentlichen. Spätere Commits in `main` können von Netlify automatisch veröffentlicht werden, wenn Continuous Deployment aktiviert ist.
+- `frontend/`: direkt auf Netlify ausgelieferte HTML-, CSS-, JavaScript- und Bilddateien; enthält Startseite, Buchvorstellungen, Datenschutzentwurf, Cookie-Einstellungen und das Login/Dashboard unter `/blog-creator/`.
+- `server/blog-service.mjs`: authentifizierte Blog-API und serverseitig gerenderte öffentliche Blogseiten.
+- `db/schema.ts`, `drizzle/`: SQLite-Schema und erzeugte, versionierte Migrationen.
+- `worker/index.ts`, `vite.config.ts`: Backend auf der bestehenden Sites-Veröffentlichung mit Cloudflare Workers und D1.
+- `netlify.toml`: Netlify veröffentlicht ausschließlich `frontend/`. `/api/*`, `/blog` und `/blog/*` werden über einen Same-Origin-Proxy an das Backend weitergeleitet.
 
-Alternativ den Inhalt des Ordners `dist/` direkt über Netlify Drop hochladen. Alle Asset- und Seitenverweise sind relativ.
+**D1 ist die dauerhaft gespeicherte SQLite-Datenbank.** Konten, gesalzene Passwort-Hashes, gehashte Sitzungskennungen, Login-Zähler, Beiträge, Entwürfe und hochgeladene Blogbilder (BLOBs) werden dort gespeichert. Es gibt keine flüchtige SQLite-Datei in einer Netlify Function und keine Speicherung der Beiträge im Browser. Die festen Buchcover bleiben Website-Assets.
 
-Offizielle Dokumentation:
-- https://docs.netlify.com/build/configure-builds/overview/
-- https://docs.netlify.com/build/configure-builds/file-based-configuration/
+Backend: https://lennox-publishing-neugestaltung.cleanrowan2.chatgpt.site
 
-## Funktionsumfang
+## Blog Creator verwenden
 
-- Neues responsives Design in Nachtblau, Weiß und Gold.
-- Buchpräsentation mit vergrößerbarem Cover und aufklappbaren Informationen.
-- Autorenbereich, Projektstand und mobiles Menü.
-- Tastaturbedienbare Navigation, sichtbare Fokusmarkierungen und reduzierte Bewegung.
-- Lokal geladene Schriftarten; keine eigenen Analyse- oder Marketing-Skripte.
+1. `/blog-creator/` öffnen und mit dem separat übermittelten Redaktionszugang anmelden. Es gibt keine öffentliche Registrierung.
+2. „Neuer Beitrag“ wählen, Titel und Text schreiben; Kurzbeschreibung und Titelbild sind optional.
+3. Über die Textleiste Überschriften, fettgedruckte Texte, Listen und Links einfügen. „Vorschau“ öffnet eine unveröffentlichte Ansicht.
+4. „Entwurf speichern“ hält den Beitrag privat. „Veröffentlichen“ stellt ihn direkt auf der Website und im Blog bereit, ohne erneutes Website-Deployment.
+5. Bestehende Beiträge lassen sich ändern, wieder offline nehmen oder nach einer Bestätigung endgültig löschen.
+6. Über „Passwort ändern“ lässt sich das Zugangspasswort ersetzen; danach ist eine neue Anmeldung nötig.
 
-## Vorübergehend deaktiviert
+Es wird erst nach einem Klick auf einen Speicherbutton gespeichert. Bei ungespeicherten Änderungen erscheint beim Wechseln/Verlassen ein Hinweis. Blogbilder werden im Browser auf maximal 1.600 Pixel Kantenlänge verkleinert; der Server akzeptiert JPG/PNG/WebP bis 900 KB. Das Projekt begrenzt den Bildspeicher auf 200 MB. Der Editor listet die letzten 500 Beiträge; der öffentliche Blog ist mit 12 Beiträgen je Seite paginiert.
 
-### Kontaktformular
+## Zugang und Sicherheit
 
-Auf der Seite steht: **„Das Kontaktformular ist aktuell nicht verfügbar.“** Es gibt keine Formularfelder, keinen Absende-Button, keinen Versand-Endpunkt und keinen Versandcode. Die bisherige Formularintegration wurde aus den veröffentlichten Dateien entfernt. Der direkte E-Mail-Link bleibt als Kontaktmöglichkeit erhalten.
+Produktive Zugangsdaten gehören **nicht** ins öffentliche Repository. Das initiale Redaktionskonto wird beim ersten erfolgreichen Login aus geschützten Laufzeitwerten angelegt. Danach gelten die Kontodaten in SQLite; ein geändertes Passwort wird nicht durch die Bootstrap-Werte überschrieben.
 
-### Impressum
+Erforderliche geheime Runtime-Werte im Sites-Backend:
 
-Das Impressum bleibt vorübergehend deaktiviert. Die alte Adresse zeigt einen Nichtverfügbarkeits-Hinweis.
+- `BLOG_BOOTSTRAP_USERNAME`
+- `BLOG_BOOTSTRAP_SALT` (Hex)
+- `BLOG_BOOTSTRAP_HASH` (PBKDF2-SHA-256, 100.000 Iterationen, 32 Bytes)
+- `BLOG_AUTH_SECRET`
 
-## Datenschutz und Cookie-Einstellungen
+Die produktiven Werte wurden außerhalb des Quellcodes eingerichtet. Ein anderes Backend braucht eine eigene sichere Einrichtung dieser Werte und die D1-Bindung `DB`. `.openai/hosting.json` enthält nur Site-Identität und logische Bindungen.
 
-`dist/datenschutz.html` enthält einen ausdrücklich vorläufigen Entwurf für die Netlify-Veröffentlichung unter https://lennox-publishing.netlify.app/.
+Das Redaktionskonto nutzt ein starkes, zufällig erzeugtes Passwort. Sitzungen sind auf 8 Stunden beschränkt. Das Cookie `__Host-lennox_blog_session` ist HttpOnly, Secure, SameSite=Lax und hostgebunden; in SQLite liegt nur sein Hash. Abmelden und Passwortänderungen widerrufen die betreffenden Sitzungen. Die API prüft Authentifizierung bei jedem geschützten Aufruf und erlaubt schreibende Browser-Anfragen nur von den beiden eingerichteten Website-Ursprüngen. Bei einer eigenen Domain muss die Origin-Liste in `server/blog-service.mjs` ergänzt und neu veröffentlicht werden.
 
-Als Betreiberkontakt ist nur `berg.lennox@web.de` eingetragen. Vollständiger Name und Anschrift des Verantwortlichen bleiben auf Wunsch offen und müssen ergänzt werden. Kontokonfiguration, Zusatzdienste und Vertragsgrundlagen sind vor einer endgültigen Freigabe zu bestätigen. Die Entwurfskennzeichnung bleibt bis dahin sichtbar.
+Anmeldeversuche werden über gehashte Benutzer- und Netzwerkkennungen in SQLite begrenzt. Öffentliche Endpunkte liefern ausschließlich veröffentlichte Beiträge und deren Titelbilder. Rohes HTML wird als Text dargestellt; Links erlauben nur HTTP, HTTPS und mailto. Der Editor meldet parallele Änderungen, statt diese still zu überschreiben. Antworten des Blogdienstes werden nicht zwischengespeichert.
 
-Die Hinweise behandeln Hosting/Protokolle, Netlifys dokumentierte Aufbewahrungszeiträume, mögliche USA-Übermittlungen, lokale Schriftarten, die deaktivierte Formularfunktion, E-Mail-Kontakt und Betroffenenrechte. Die separate Sites-Vorschau wird auf dieser Seite als andere Hostingumgebung gekennzeichnet.
+## Entwicklung und Veröffentlichung
 
-### Tatsächliches Speicherverhalten
-
-- Im Website-Code sind keine Analyse- oder Marketingdienste eingebunden.
-- Die am 24. November 2026 geprüften HTTP-Antworten der Netlify-Startseite, des Skripts, des Buchcovers und der bisherigen Datenschutzseite enthielten keinen `Set-Cookie`-Header. Dies ersetzt keinen vollständigen Browser- oder Konten-Audit.
-- Der neue Hinweis setzt beim ersten Aufruf kein eigenes Cookie.
-- **Für diesen Besuch schließen** verwendet nur Arbeitsspeicher und setzt kein neues dauerhaftes Cookie.
-- Erst nach aktivem Ankreuzen von **Hinweis für 180 Tage ausblenden** und anschließendem Speichern wird `lennox_privacy_notice=hidden-v1` gesetzt: `Max-Age=15552000`, `Path=/`, `SameSite=Lax`, bei HTTPS `Secure`. Die Domain wird nicht erweitert.
-- Ohne Speicherung fortfahren beziehungsweise Zurücksetzen löscht nur dieses eigene Cookie, nicht fremde Cookies.
-- Es werden keine individuellen Kennungen, Cookie-Werte oder Cookie-Listen an einen zusätzlichen Dienst geschickt. Local Storage und Session Storage kommen nicht zum Einsatz.
-- Die Übersicht zeigt die aktuell durch JavaScript auslesbaren Cookie-Namen. HttpOnly-Cookies und Cookies anderer Domains können hier nicht ausgelesen oder verwaltet werden. Unbekannte Cookies werden ausdrücklich nicht automatisch als erforderlich klassifiziert.
-- Die Cookie-Einstellungen sind auf jeder Seite erneut über den Footer erreichbar. Beide Fortfahren-/Speichern-Schaltflächen haben dieselbe visuelle Gewichtung. Es gibt keine fiktiven Analyse- oder Marketing-Schalter.
-
-### Quellen für die Netlify-Angaben
-
-- Netlify DPA, aktualisiert am 13. November 2026: https://www.netlify.com/pdf/netlify-dpa.pdf/
-- Netlify Privacy Statement: https://www.netlify.com/privacy/
-- Die DPA nennt für CDN-/Zugriffslogs 30 Tage online und bis zu 13 Monate Archiv; Plattformlogs 90 Tage online und 1 Jahr offline; Sicherheits-/Missbrauchslogs 365 Tage online und bis zu 6 Jahre Archiv. Diese Kategorien dürfen nicht zu einer pauschalen 30-Tage-Löschung verkürzt werden.
-
-## Prüfungen
+Node.js 22.13 oder neuer (Tests mit `node:sqlite` unter Node.js 24).
 
 ```sh
-node --test tests/privacy-storage.test.mjs
-node --check dist/privacy-storage.mjs
-node --input-type=module --check < dist/privacy.js
+npm run install:ci
+node --test tests/*.test.mjs
+npm run db:generate  # nur nach Schemaänderungen
+npm run build
 ```
 
-Die Tests prüfen insbesondere keine Speicherung beim ersten Besuch, freiwillige Speicherung, Ablaufparameter, Widerruf, Erhalt fremder Cookies, Zurücksetzen und blockierten Browser-Speicher. Ein echter Browser-Cookie-Audit bleibt eine eigene Prüfung.
+Migrationen enthalten ausschließlich Schemaänderungen. Bereits veröffentlichte SQL-Dateien und Drizzle-Metadaten unverändert lassen; weitere Migrationen anhängen. Die Sites-Veröffentlichung spielt neue Migrationen vor dem Backend-Upload ein. Die lokalen Daten unter `.wrangler/` sind von der produktiven Datenbank getrennt und werden nicht eingecheckt.
 
-## Projektstruktur
+Ein Push ins verbundene GitHub-Repository aktualisiert das statische Netlify-Frontend. Backendänderungen müssen zusätzlich über die bestehende Sites-Veröffentlichung gebaut und veröffentlicht werden. Eine reine Netlify-Veröffentlichung provisioniert die SQLite-Datenbank nicht. Die beiden Veröffentlichungen müssen verfügbar bleiben, damit Blog und Anmeldung funktionieren.
 
-```text
-dist/
-  index.html             Startseite
-  styles.css             Design und responsive Ansichten
-  script.js              Menü, Coverdialog und Navigationsmarkierung
-  impressum.html         Nicht-verfügbar-Seite
-  datenschutz.html       Vorläufige Netlify-Datenschutzhinweise
-  privacy.css            Datenschutzseite und Cookie-Oberfläche
-  privacy.js             Cookie-Hinweis, Übersicht und Einstellungen
-  privacy-storage.mjs    Speicherregeln für den freiwilligen Hinweis-Cookie
-  404.html               Eigene Fehlerseite
-  assets/                Buchcover, Logo, Favicon und lokale Fonts
-docs/legal-drafts/       Frühere Entwürfe, nicht im Website-Build
-tests/                  Tests für freiwillige Speicherung und Widerruf
-netlify.toml             Netlify-Veröffentlichung aus dist/
-```
+## Buchprojekte und Datenschutz
 
-## Inhalte ändern
+- Das Licht von Bethlehem: bestehendes Buchprojekt mit Cover, Beschreibung und Entwicklungsstand.
+- Abenteuer mit Maggie: zweites Buchprojekt mit dem bereitgestellten Cover. Es ist kein Veröffentlichungstermin und kein Verkauf angekündigt.
+- Das Kontaktformular bleibt deaktiviert; die E-Mail-Verknüpfung bleibt erreichbar.
+- Das Impressum bleibt auf Wunsch pausiert.
+- Die Datenschutzerklärung bleibt ein ausdrücklich gekennzeichneter **Entwurf** mit der E-Mail-Adresse. Die früher zurückgestellten vollständigen Betreiberangaben sind weiterhin offen. Die neuen Blog-, SQLite-, Hosting- und Sitzungsdaten sind beschrieben; die Vertragskette und tatsächlichen Hosting-/Sicherungsbedingungen müssen vor der endgültigen Fassung bestätigt werden.
+- Es gibt keine eingebauten Analyse- oder Marketingdienste. Das optionale Hinweis-Cookie `lennox_privacy_notice` wird nur nach ausdrücklicher Auswahl für bis zu 180 Tage gesetzt. Das notwendige Login-Cookie wird separat erklärt und über Abmelden beendet.
 
-Texte stehen direkt in `dist/index.html`. Farben und Layout sind in `dist/styles.css` über benannte Variablen und Abschnitte organisiert. Das Cover liegt unter `dist/assets/book-cover.webp`, das Logo unter `dist/assets/publisher-logo.webp`.
-
-Die Bilddateien stammen aus der bisherigen Website. Die Schriftarten **DM Sans** und **Libre Caslon Display** stehen unter der SIL Open Font License; die Lizenzen befinden sich im Schriftordner. Das Buch wird weiterhin als **in Entwicklung** dargestellt; es wird kein Veröffentlichungstermin behauptet.
+Der Blog beginnt ohne erfundene Beiträge. Die erste echte Veröffentlichung erfolgt durch die Redaktion. Eine Erreichbarkeitsprüfung oder ein erfolgreiches Deployment bestätigt keine rechtliche Vollständigkeit des Impressums oder Datenschutzentwurfs.

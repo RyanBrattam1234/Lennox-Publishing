@@ -1,0 +1,6 @@
+{
+  "name": "lennox-publishing-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Static Netlify frontend. Blog API is hosted separately."
+}
