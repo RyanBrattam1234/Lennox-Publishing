@@ -75,3 +75,27 @@
   [headers.values]
     Cache-Control = "no-store"
     X-Robots-Tag = "noindex, nofollow"
+
+[[redirects]]
+  from = "/impressum"
+  to = "https://lennox-publishing-neugestaltung.cleanrowan2.chatgpt.site/impressum"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/impressum.html"
+  to = "https://lennox-publishing-neugestaltung.cleanrowan2.chatgpt.site/impressum"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/datenschutz"
+  to = "https://lennox-publishing-neugestaltung.cleanrowan2.chatgpt.site/datenschutz"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/datenschutz.html"
+  to = "https://lennox-publishing-neugestaltung.cleanrowan2.chatgpt.site/datenschutz"
+  status = 200
+  force = true
