@@ -89,3 +89,24 @@ test('Owner can change books and revoke editor sessions, editor cannot administe
   assert.equal((await c.request('/api/admin/posts','GET',undefined,{headers:{cookie:editorCookie}})).status,401);
   assert.equal((await c.login()).status,401);
 });
+
+test('Only owner publishes additions, repeated submit is safe and legacy catalog stays intact',async t=>{
+  const c=await setup();t.after(()=>c.DB.sqlite.close());
+  const id=crypto.randomUUID(),payload={id,title:'Ein neues Buch',status:'Vorschau',description:'Beschreibung',subtitle:''};
+  assert.equal((await c.request('/api/owner/books','POST',payload)).status,401);
+  await c.login();
+  assert.equal((await c.request('/api/owner/books','POST',payload)).status,403);
+  c.env.OWNER_BOOTSTRAP_SALT=c.env.BLOG_BOOTSTRAP_SALT;
+  c.env.OWNER_BOOTSTRAP_HASH=await passwordHash('test-owner-password',c.env.OWNER_BOOTSTRAP_SALT);
+  await c.request('/api/auth/login','POST',{username:'ryan',password:'test-owner-password'},{rememberCookie:true});
+  const path='/api/owner/books';
+  assert.equal((await c.request(path,'POST',{...payload,image:'aGVsbG8='})).status,415);
+  payload.image='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1eEAAAAASUVORK5CYII=';
+  for (let i=0;i<2;i++) assert.equal((await c.request(path,'POST',payload)).status,201);
+  const catalog=async()=> (await (await c.request('/api/books?catalog=1')).json()).books;
+  const books=await catalog();assert.equal(books.length,3);assert.equal(books[2].title,payload.title);
+  assert.equal((await c.request(books[2].cover)).status,200);
+  assert.equal((await (await c.request('/api/books')).json()).books.length,2);
+  assert.equal((await c.request(path+'/'+id,'PUT',{...payload,title:'Neuer Titel'})).status,200);
+  assert.equal((await catalog())[2].title,'Neuer Titel');
+});

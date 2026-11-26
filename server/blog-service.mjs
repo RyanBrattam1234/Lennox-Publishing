@@ -204,17 +204,36 @@ async function manageWebsite(request,env,path) {
     ]);
     return json({ok:true});
   }
+  if (path === '/api/owner/books' && method === 'POST') {
+    const data = await bodyJson(request, 1300000);
+    validateBook(data,true);
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(data.id)) fail(400,'Ungültige Buchkennung.');
+    let bytes = null, mime = null;
+    if (data.image) {
+      if (typeof data.image !== 'string' || data.image.length > 4*Math.ceil(MAX_IMAGE/3)) fail(413,'Cover zu groß.');
+      try { bytes = Uint8Array.from(atob(data.image),c => c.charCodeAt(0)); } catch { fail(400,'Bilddaten ungültig.'); }
+      mime = imageMime(bytes);
+      if (!mime || bytes.length > MAX_IMAGE) fail(415,'Bitte JPG, PNG oder WebP bis 900 KB verwenden.');
+    }
+    await run(db,'INSERT INTO book_settings(id,title,status,subtitle,description,mime,cover,created_at) VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING',data.id,data.title.trim(),data.status.trim(),data.subtitle.trim(),data.description.trim(),mime,bytes?.buffer ?? null,Date.now());
+    return json({id:data.id},201);
+  }
   if (path === '/api/books' && method === 'GET') {
-    const rows = await all(db,'SELECT id,subtitle,description,status,mime FROM book_settings');
-    return json({books:books.map(book => {
+    const catalog = new URL(request.url).searchParams.get('catalog') === '1';
+    const rows = await all(db,'SELECT id,title,subtitle,description,status,mime FROM book_settings ORDER BY created_at DESC,id');
+    const featured = books.map(book => {
       const row = rows.find(item => item.id === book.id);
       if (!row) return book;
       return {...book,status:row.status ?? book.status,subtitle:row.subtitle ?? book.subtitle,description:row.description ?? book.description,cover:row.mime ? '/api/books/'+book.id+'/cover' : book.cover};
-    })});
+    });
+    const additions = catalog ? rows.filter(row => row.title).map(({mime,...row}) => ({...row,added:true,cover:mime ? '/api/books/'+row.id+'/cover' : null})) : [];
+    return json({books:[...featured,...additions]});
   }
-  const match = /^\/api\/(owner\/)?books\/([a-z]+)(\/cover)?$/.exec(path);
-  if (!match || !books.some(book => book.id === match[2])) fail(404,'Buch nicht gefunden.');
+  const match = /^\/api\/(owner\/)?books\/([a-z0-9-]{1,36})(\/cover)?$/.exec(path);
+  if (!match) fail(404,'Buch nicht gefunden.');
   const [,owner,id,cover] = match;
+  const added = !books.some(book => book.id === id);
+  if (added && !(await first(db,'SELECT id FROM book_settings WHERE id=? AND title IS NOT NULL',id))) fail(404,'Buch nicht gefunden.');
   if (!owner && cover && method === 'GET') {
     const row = await first(db,'SELECT mime,cover FROM book_settings WHERE id=? AND mime IS NOT NULL',id);
     if (!row) fail(404,'Bild nicht gefunden.');
@@ -228,10 +247,20 @@ async function manageWebsite(request,env,path) {
     await run(db,'UPDATE book_settings SET mime=NULL,cover=NULL WHERE id=?',id);
   } else if (owner && !cover && method === 'PUT') {
     const data = await bodyJson(request,12000);
-    for (const [key,max] of [['status',80],['subtitle',240],['description',1600]]) {
-      if (typeof data[key] !== 'string' || !data[key].trim() || data[key].length > max) fail(400,'Bitte alle Buchfelder innerhalb der Zeichenlimits ausfüllen.');
+    validateBook(data,added);
+    if (added) {
+      await run(db,'UPDATE book_settings SET title=?,status=?,subtitle=?,description=? WHERE id=?',data.title.trim(),data.status.trim(),data.subtitle.trim(),data.description.trim(),id);
+      return json({ok:true});
     }
     await run(db,'INSERT INTO book_settings(id,status,subtitle,description) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,subtitle=excluded.subtitle,description=excluded.description',id,data.status.trim(),data.subtitle.trim(),data.description.trim());
   } else fail(405,'Methode nicht verfügbar.');
   return json({ok:true});
+}
+
+function validateBook(data,withTitle) {
+  const limits = {status:80,subtitle:240,description:1600};
+  if (withTitle) limits.title = 160;
+  for (const [key,max] of Object.entries(limits)) {
+    if (typeof data[key] !== 'string' || data[key].length > max || (key !== 'subtitle' && !data[key].trim())) fail(400,'Bitte Titel, Status und Beschreibung innerhalb der Zeichenlimits ausfüllen.');
+  }
 }

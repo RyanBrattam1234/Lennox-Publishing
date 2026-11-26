@@ -15,6 +15,13 @@
       "when": 1795674283940,
       "tag": "0001_book_settings",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1795674780163,
+      "tag": "0002_catalog",
+      "breakpoints": true
     }
   ]
 }

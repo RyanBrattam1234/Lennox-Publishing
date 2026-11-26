@@ -28,6 +28,8 @@ export const attempts = sqliteTable("blog_login_attempts", {
 
 export const bookSettings = sqliteTable("book_settings", {
   id: text("id").primaryKey(),
+  title: text("title"),
+  createdAt: integer("created_at"),
   status: text("status"),
   subtitle: text("subtitle"),
   description: text("description"),

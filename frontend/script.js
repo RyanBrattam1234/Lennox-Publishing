@@ -77,9 +77,17 @@
 })();
 
 async function loadBookDetails() {
-  const response = await fetch('/api/books');
+  const response = await fetch('/api/books?catalog=1');
   if (!response.ok) return;
   for (const book of (await response.json()).books) {
+    if (book.added) {
+      const section = document.getElementById('weitere-buecher');
+      if (section) {
+        section.querySelector('.catalog-list').append(bookCard(book));
+        section.hidden = false;
+      }
+      continue;
+    }
     const grid = document.getElementById(book.id === 'bethlehem' ? 'book-title' : 'maggie-title')?.closest('.book-grid');
     if (!grid) continue;
     for (const key of ['subtitle','description']) grid.querySelector('.book-'+key).textContent = book[key];
@@ -95,3 +103,32 @@ async function loadBookDetails() {
   }
 }
 loadBookDetails().catch(() => {});
+
+function bookCard(book) {
+  const card = document.createElement('article');
+  card.className = 'catalog-card';
+  const art = document.createElement(book.cover ? 'a' : 'div');
+  art.className = 'catalog-art';
+  if (book.cover) {
+    art.href = book.cover;
+    const image = document.createElement('img');
+    image.src = book.cover;
+    image.alt = 'Cover von '+book.title+' in Großansicht';
+    image.loading = 'lazy';
+    art.append(image);
+  } else {
+    art.classList.add('typographic-cover');
+    art.textContent = book.title;
+    art.setAttribute('aria-hidden','true');
+  }
+  const copy = document.createElement('div');
+  for (const [tag,text,style] of [['span',book.status,'eyebrow'],['h3',book.title,''],['p',book.subtitle,'catalog-subtitle'],['p',book.description,'']]) {
+    if (!text) continue;
+    const element = document.createElement(tag);
+    element.className = style;
+    element.textContent = text;
+    copy.append(element);
+  }
+  card.append(art,copy);
+  return card;
+}
