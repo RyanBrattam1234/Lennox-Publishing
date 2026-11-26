@@ -75,3 +75,23 @@
   // Contact submission is intentionally disabled. No form, submission
   // endpoint, request handler or third-party form script is included.
 })();
+
+async function loadBookDetails() {
+  const response = await fetch('/api/books');
+  if (!response.ok) return;
+  for (const book of (await response.json()).books) {
+    const grid = document.getElementById(book.id === 'bethlehem' ? 'book-title' : 'maggie-title')?.closest('.book-grid');
+    if (!grid) continue;
+    for (const key of ['subtitle','description']) grid.querySelector('.book-'+key).textContent = book[key];
+    grid.querySelector('.status').textContent = book.status;
+    for (const link of grid.querySelectorAll('[data-open-cover]')) link.href = book.cover;
+    if (book.cover.startsWith('/api/')) {
+      grid.querySelector('.cover-link img').src = book.cover;
+      if (book.id === 'bethlehem') {
+        const hero = document.querySelector('a[href="#buecher"] img[src$="book-cover.webp"]');
+        if (hero) hero.src = book.cover;
+      }
+    }
+  }
+}
+loadBookDetails().catch(() => {});

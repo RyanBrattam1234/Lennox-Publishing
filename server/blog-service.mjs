@@ -1,3 +1,4 @@
+import { books } from "./book-defaults.mjs";
 import { escapeHtml as esc, renderMarkdown, formatDate } from '../frontend/blog-format.mjs';
 
 export const SESSION_COOKIE = '__Host-lennox_blog_session';
@@ -58,18 +59,22 @@ async function login(request,env) {
   for(let i=0;i<keys.length;i++){const row=await first(db,'SELECT count,window_start FROM blog_login_attempts WHERE key=?',keys[i]);if(row&&row.window_start>now-windowMs&&row.count>=limits[i])fail(429,'Zu viele Anmeldeversuche. Bitte warte 15 Minuten.');}
   await db.batch(keys.map(key=>db.prepare('INSERT INTO blog_login_attempts (key,count,window_start) VALUES (?,1,?) ON CONFLICT(key) DO UPDATE SET count=CASE WHEN window_start<=? THEN 1 ELSE count+1 END,window_start=CASE WHEN window_start<=? THEN ? ELSE window_start END').bind(key,now,now-windowMs,now-windowMs,now)));
   let user=await first(db,'SELECT * FROM blog_users WHERE username=?',username);
-  const noUsers=!user&&!(await first(db,'SELECT id FROM blog_users LIMIT 1'));
-  const bootstrap=noUsers&&equal(username,env.BLOG_BOOTSTRAP_USERNAME);
-  const salt=user?.password_salt||env.BLOG_BOOTSTRAP_SALT;
-  const hash=await passwordHash(password,salt,user?.iterations||PASSWORD_ITERATIONS);
-  if(!(user?equal(hash,user.password_hash):bootstrap&&equal(hash,env.BLOG_BOOTSTRAP_HASH)))fail(401,'Benutzername oder Passwort ist falsch.');
-  if(!user){await run(db,'INSERT OR IGNORE INTO blog_users (id,username,password_hash,password_salt,iterations,display_name,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',crypto.randomUUID(),username,env.BLOG_BOOTSTRAP_HASH,salt,PASSWORD_ITERATIONS,'Lennox Publishing',now,now);user=await first(db,'SELECT * FROM blog_users WHERE username=?',username);}
+  const owner = username === 'ryan';
+  const bootstrapHash = owner ? env.OWNER_BOOTSTRAP_HASH : env.BLOG_BOOTSTRAP_HASH;
+  const salt = user?.password_salt || (owner ? env.OWNER_BOOTSTRAP_SALT : env.BLOG_BOOTSTRAP_SALT);
+  if (!user && ((!owner && username !== env.BLOG_BOOTSTRAP_USERNAME) || !bootstrapHash || !salt)) fail(401,'Benutzername oder Passwort ist falsch.');
+  const hash = await passwordHash(password,salt,user?.iterations || PASSWORD_ITERATIONS);
+  if (!equal(hash,user?.password_hash || bootstrapHash)) fail(401,'Benutzername oder Passwort ist falsch.');
+  if (!user) {
+    await run(db,'INSERT OR IGNORE INTO blog_users (id,username,password_hash,password_salt,iterations,display_name,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)',owner ? 'site-owner' : crypto.randomUUID(),username,hash,salt,PASSWORD_ITERATIONS,owner ? 'Ryan' : 'Lennox Publishing',now,now);
+    user = await first(db,'SELECT * FROM blog_users WHERE username=?',username);
+  }
   const token=randomHex(32);
   await db.batch([
     db.prepare('DELETE FROM blog_sessions WHERE expires_at<=?').bind(now),
     db.prepare('DELETE FROM blog_login_attempts WHERE window_start<=? OR key=?').bind(now-windowMs,keys[0]),
     db.prepare('DELETE FROM blog_images WHERE created_at<? AND id NOT IN (SELECT cover_image_id FROM blog_posts WHERE cover_image_id IS NOT NULL)').bind(now-86400000),
-    db.prepare('INSERT INTO blog_sessions (token_hash,user_id,created_at,expires_at) VALUES (?,?,?,?)').bind(await sha256(token),user.id,now,now+SESSION_SECONDS*1000),
+    db.prepare('INSERT INTO blog_sessions (token_hash,user_id,created_at,expires_at) SELECT ?,id,?,? FROM blog_users WHERE id=? AND password_hash=?').bind(await sha256(token),now,now+SESSION_SECONDS*1000,user.id,hash),
   ]);
   return json({user:{username:user.username,displayName:user.display_name}},200,{'Set-Cookie':cookie(token)});
 }
@@ -143,6 +148,7 @@ export async function handleBlogRequest(request,env) {
     if(!env.DB)fail(503,'Der Blog wird gerade eingerichtet. Bitte versuche es später erneut.');
     if(path==='/blog'||path.startsWith('/blog/')){if(!['GET','HEAD'].includes(request.method))fail(405,'Diese Methode ist nicht erlaubt.');const response=await blogPage(env.DB,url);return request.method==='HEAD'?new Response(null,response):response;}
     if(!['GET','HEAD'].includes(request.method))checkOrigin(request);
+    if(path === '/api/books' || path.startsWith('/api/books/') || path.startsWith('/api/owner/')) return await manageWebsite(request,env,path);
     if(path==='/api/auth/login'&&request.method==='POST')return await login(request,env);
     if(path==='/api/auth/session'&&request.method==='GET'){const user=await sessionUser(request,env.DB);return json({user:user?{username:user.username,displayName:user.display_name}:null});}
     if(path==='/api/auth/logout'&&request.method==='POST'){
@@ -177,4 +183,55 @@ export async function handleBlogRequest(request,env) {
     }
     fail(404,'Dieser Bereich wurde nicht gefunden.');
   }catch(error){if(error instanceof HttpError)return json({error:error.message},error.status);console.error('Blog request failed',{path,name:error?.name,message:error?.message});return json({error:'Die Anfrage konnte gerade nicht verarbeitet werden. Bitte versuche es erneut.'},500);}
+}
+
+async function manageWebsite(request,env,path) {
+  const db = env.DB, method = request.method;
+  if (path.startsWith('/api/owner/')) {
+    const user = await requireUser(request,db);
+    if (user.id !== 'site-owner') fail(403,'Zugriff nur für die Websiteverwaltung.');
+  }
+  if (path === '/api/owner/account' && method === 'GET') return json({editor:env.BLOG_BOOTSTRAP_USERNAME});
+  if (path === '/api/owner/editor-password' && method === 'PUT') {
+    const {password} = await bodyJson(request,4096);
+    if (typeof password !== 'string' || password.length < 16 || password.length > 256) fail(400,'Bitte 16 bis 256 Zeichen verwenden.');
+    const editor = await first(db,'SELECT id FROM blog_users WHERE username=?',env.BLOG_BOOTSTRAP_USERNAME);
+    if (!editor || editor.id === 'site-owner') fail(404,'Redaktionskonto nicht gefunden.');
+    const salt = randomHex(16), hash = await passwordHash(password,salt);
+    await db.batch([
+      db.prepare('UPDATE blog_users SET password_hash=?,password_salt=?,iterations=?,updated_at=? WHERE id=?').bind(hash,salt,PASSWORD_ITERATIONS,Date.now(),editor.id),
+      db.prepare('DELETE FROM blog_sessions WHERE user_id=?').bind(editor.id)
+    ]);
+    return json({ok:true});
+  }
+  if (path === '/api/books' && method === 'GET') {
+    const rows = await all(db,'SELECT id,subtitle,description,status,mime FROM book_settings');
+    return json({books:books.map(book => {
+      const row = rows.find(item => item.id === book.id);
+      if (!row) return book;
+      return {...book,status:row.status ?? book.status,subtitle:row.subtitle ?? book.subtitle,description:row.description ?? book.description,cover:row.mime ? '/api/books/'+book.id+'/cover' : book.cover};
+    })});
+  }
+  const match = /^\/api\/(owner\/)?books\/([a-z]+)(\/cover)?$/.exec(path);
+  if (!match || !books.some(book => book.id === match[2])) fail(404,'Buch nicht gefunden.');
+  const [,owner,id,cover] = match;
+  if (!owner && cover && method === 'GET') {
+    const row = await first(db,'SELECT mime,cover FROM book_settings WHERE id=? AND mime IS NOT NULL',id);
+    if (!row) fail(404,'Bild nicht gefunden.');
+    return new Response(new Uint8Array(row.cover),{headers:{...security,'Content-Type':row.mime,'Content-Security-Policy':"default-src 'none'; sandbox"}});
+  }
+  if (owner && cover && method === 'PUT') {
+    const bytes = await readBytes(request,MAX_IMAGE), mime=imageMime(bytes);
+    if (!mime) fail(415,'Bitte ein JPG-, PNG- oder WebP-Bild hochladen.');
+    await run(db,'INSERT INTO book_settings(id,mime,cover) VALUES (?,?,?) ON CONFLICT(id) DO UPDATE SET mime=excluded.mime,cover=excluded.cover',id,mime,bytes.buffer);
+  } else if (owner && cover && method === 'DELETE') {
+    await run(db,'UPDATE book_settings SET mime=NULL,cover=NULL WHERE id=?',id);
+  } else if (owner && !cover && method === 'PUT') {
+    const data = await bodyJson(request,12000);
+    for (const [key,max] of [['status',80],['subtitle',240],['description',1600]]) {
+      if (typeof data[key] !== 'string' || !data[key].trim() || data[key].length > max) fail(400,'Bitte alle Buchfelder innerhalb der Zeichenlimits ausfüllen.');
+    }
+    await run(db,'INSERT INTO book_settings(id,status,subtitle,description) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET status=excluded.status,subtitle=excluded.subtitle,description=excluded.description',id,data.status.trim(),data.subtitle.trim(),data.description.trim());
+  } else fail(405,'Methode nicht verfügbar.');
+  return json({ok:true});
 }

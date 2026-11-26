@@ -67,3 +67,25 @@ test('Formatting never accepts executable HTML or unsafe links',()=>{
   const html=renderMarkdown('# <img src=x onerror=alert(1)>\n\n[Bad](javascript:evil) [Good](https://example.com/?x=1&y=2)\n\n- **Fett**\n- `Code`');
   assert.ok(!html.includes('<img'));assert.ok(!html.includes('href="javascript'));assert.ok(html.includes('href="https://example.com/?x=1&amp;y=2"'));assert.ok(html.includes('<li><strong>Fett</strong></li>'));
 });
+
+test('Owner can change books and revoke editor sessions, editor cannot administer', async t => {
+  const c=await setup();t.after(()=>c.DB.sqlite.close());
+  assert.equal((await c.request('/api/owner/account')).status,401);
+  await c.login();
+  const editorCookie=c.cookie;
+  assert.equal((await c.request('/api/owner/editor-password','PUT',{password:'new-editor-password'})).status,403);
+  c.env.OWNER_BOOTSTRAP_SALT=c.env.BLOG_BOOTSTRAP_SALT;
+  c.env.OWNER_BOOTSTRAP_HASH=await passwordHash('owner-test-password',c.env.OWNER_BOOTSTRAP_SALT);
+  await c.request('/api/auth/login','POST',{username:'ryan',password:'owner-test-password'},{rememberCookie:true});
+  assert.equal((await c.request('/api/owner/account')).status,200);
+  const path='/api/owner/books/maggie';
+  assert.equal((await c.request(path,'PUT',{status:'Vorschau',subtitle:'Untertitel',description:'Beschreibung'})).status,200);
+  const image=Uint8Array.from(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a1eEAAAAASUVORK5CYII=','base64'));
+  assert.equal((await c.request(path+'/cover','PUT',image)).status,200);
+  const b=(await (await c.request('/api/books')).json()).books.find(b=>b.id==='maggie');
+  assert.equal(b.status,'Vorschau');assert.deepEqual(new Uint8Array(await (await c.request(b.cover)).arrayBuffer()),image);
+  assert.equal((await c.request(path+'/cover','DELETE')).status,200);
+  assert.equal((await c.request('/api/owner/editor-password','PUT',{password:'new-editor-password'})).status,200);
+  assert.equal((await c.request('/api/admin/posts','GET',undefined,{headers:{cookie:editorCookie}})).status,401);
+  assert.equal((await c.login()).status,401);
+});

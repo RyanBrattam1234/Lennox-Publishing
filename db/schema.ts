@@ -25,3 +25,12 @@ export const posts = sqliteTable("blog_posts", {
 export const attempts = sqliteTable("blog_login_attempts", {
   key: text("key").primaryKey(), count: integer("count").notNull(), windowStart: integer("window_start").notNull(),
 });
+
+export const bookSettings = sqliteTable("book_settings", {
+  id: text("id").primaryKey(),
+  status: text("status"),
+  subtitle: text("subtitle"),
+  description: text("description"),
+  mime: text("mime"),
+  cover: blob("cover", {mode:"buffer"}),
+});
