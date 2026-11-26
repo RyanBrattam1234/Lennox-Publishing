@@ -5,6 +5,8 @@ function signedOut() {
   el('panel').hidden = el('logout').hidden = true;
   el('login').hidden = false;
   for (const form of document.forms) form.reset();
+  setPasswordVisible(false);
+  selectView('program');
 }
 async function api(path,method='GET',payload) {
   const binary = payload instanceof Blob;
@@ -22,6 +24,7 @@ function showBook() {
   el('edit-title').hidden = !book.added;
   el('details').elements.title.value = book.title;
   el('preview').hidden = !book.cover;
+  el('preview').parentElement.hidden = !book.cover;
   if (book.cover) el('preview').src = book.cover+'?v='+Date.now();
   el('restore').hidden = book.added && !book.cover;
   el('restore').textContent = book.added ? 'Cover entfernen' : 'Originalcover verwenden';
@@ -73,6 +76,23 @@ for (const id of ['reset','self']) bind(id,'submit',async () => {
   el(id).reset();if (id==='self') signedOut();
   return id==='reset'?'Redaktionspasswort geändert.':'Bitte mit deinem neuen Passwort anmelden.';
 });
+function selectView(id) {
+  for (const button of document.querySelectorAll('[data-view]')) {
+    const active = button.dataset.view === id;
+    button.setAttribute('aria-pressed', String(active));
+    el(button.dataset.view).hidden = !active;
+  }
+}
+for (const button of document.querySelectorAll('[data-view]')) {
+  button.addEventListener('click', () => selectView(button.dataset.view));
+}
+const reveal = document.querySelector('.reveal');
+function setPasswordVisible(visible) {
+  el('password').type = visible ? 'text' : 'password';
+  reveal.textContent = visible ? 'Verbergen' : 'Anzeigen';
+  reveal.setAttribute('aria-pressed', String(visible));
+}
+reveal.addEventListener('click', () => setPasswordVisible(el('password').type === 'password'));
 refresh().catch(err=>{signedOut();if(err.status!==401)el('notice').textContent=err.message;});
 
 let pendingId = crypto.randomUUID();
