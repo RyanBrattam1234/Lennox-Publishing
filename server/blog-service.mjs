@@ -1,3 +1,4 @@
+import { generateAuthenticationOptions, generateRegistrationOptions, verifyRegistrationResponse, verifyAuthenticationResponse } from '@simplewebauthn/server';
 import { books } from "./book-defaults.mjs";
 import { escapeHtml as esc, renderMarkdown, formatDate } from '../frontend/blog-format.mjs';
 
@@ -45,7 +46,7 @@ function checkOrigin(request) {
 async function sessionUser(request,db) {
   const token=request.headers.get('cookie')?.split(';').map(v=>v.trim()).find(v=>v.startsWith(SESSION_COOKIE+'='))?.slice(SESSION_COOKIE.length+1);
   if(!token||!/^[a-f0-9]{64}$/.test(token))return null;
-  return first(db,'SELECT u.id,u.username,u.display_name FROM blog_sessions s JOIN blog_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?',await sha256(token),Date.now());
+  return first(db,'SELECT u.id,u.username,u.display_name,s.created_at AS session_start,s.token_hash AS session_hash FROM blog_sessions s JOIN blog_users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>?',await sha256(token),Date.now());
 }
 async function requireUser(request,db){const user=await sessionUser(request,db);if(!user)fail(401,'Bitte melde dich im Blog Creator an.');return user;}
 async function login(request,env) {
@@ -148,6 +149,7 @@ export async function handleBlogRequest(request,env) {
     if(!env.DB)fail(503,'Der Blog wird gerade eingerichtet. Bitte versuche es später erneut.');
     if(path==='/blog'||path.startsWith('/blog/')){if(!['GET','HEAD'].includes(request.method))fail(405,'Diese Methode ist nicht erlaubt.');const response=await blogPage(env.DB,url);return request.method==='HEAD'?new Response(null,response):response;}
     if(!['GET','HEAD'].includes(request.method))checkOrigin(request);
+    if(path.startsWith('/api/passkeys/') && request.method === 'POST') return await passkeyRequest(request,env,path.slice('/api/passkeys/'.length));
     if(path === '/api/books' || path.startsWith('/api/books/') || path.startsWith('/api/owner/')) return await manageWebsite(request,env,path);
     if(path==='/api/auth/login'&&request.method==='POST')return await login(request,env);
     if(path==='/api/auth/session'&&request.method==='GET'){const user=await sessionUser(request,env.DB);return json({user:user?{username:user.username,displayName:user.display_name}:null});}
@@ -200,6 +202,7 @@ async function manageWebsite(request,env,path) {
     const salt = randomHex(16), hash = await passwordHash(password,salt);
     await db.batch([
       db.prepare('UPDATE blog_users SET password_hash=?,password_salt=?,iterations=?,updated_at=? WHERE id=?').bind(hash,salt,PASSWORD_ITERATIONS,Date.now(),editor.id),
+      db.prepare('DELETE FROM account_passkeys WHERE user_id=?').bind(editor.id),
       db.prepare('DELETE FROM blog_sessions WHERE user_id=?').bind(editor.id)
     ]);
     return json({ok:true});
@@ -263,4 +266,76 @@ function validateBook(data,withTitle) {
   for (const [key,max] of Object.entries(limits)) {
     if (typeof data[key] !== 'string' || data[key].length > max || (key !== 'subtitle' && !data[key].trim())) fail(400,'Bitte Titel, Status und Beschreibung innerhalb der Zeichenlimits ausfüllen.');
   }
+}
+
+const passkeyHost = 'lennox-publishing-neugestaltung.cleanrowan2.chatgpt.site';
+const passkeyOrigin = 'https://' + passkeyHost;
+const challengeCookie = '__Host-lennox_passkey';
+const verificationMessage = 'Der Passkey konnte nicht bestätigt werden. Bitte starte die Anmeldung erneut.';
+
+async function passkeyRequest(request,env,action) {
+  if (request.headers.get('origin') !== passkeyOrigin) fail(403,'Bitte die feste Anmeldeadresse verwenden.');
+  const data = await bodyJson(request,64000);
+  if (!['admin','blog'].includes(data.area)) fail(400,'Anmeldebereich fehlt.');
+  const db = env.DB, now = Date.now();
+  const register = action.startsWith('register/');
+  const login = action.startsWith('login/');
+  let user;
+  if (!login) {
+    user = await requireUser(request,db);
+    if ((user.id === 'site-owner') !== (data.area === 'admin')) fail(403,'Bitte das passende Konto verwenden.');
+    if (now-user.session_start > 300000) fail(403,'Bitte zuerst abmelden und erneut anmelden, um Passkeys zu verwalten.');
+  }
+  if (action === 'remove') {
+    await run(db,'DELETE FROM account_passkeys WHERE user_id=?',user.id);
+    return json({ok:true});
+  }
+  if (!register && !login) fail(404,'Aktion unbekannt.');
+  const scope = [register?'register':'login',data.area,user?.session_hash || ''].join('/');
+  if (action.endsWith('/options')) {
+    let options;
+    if (register) {
+      const keys = await all(db,'SELECT id FROM account_passkeys WHERE user_id=?',user.id);
+      if (keys.length >= 10) fail(400,'Bitte zuerst bestehende Passkeys entfernen.');
+      options = await generateRegistrationOptions({rpName:'Lennox Publishing',rpID:passkeyHost,userID:encoder.encode(user.id),userName:user.username,userDisplayName:user.display_name,excludeCredentials:keys,attestationType:'none',supportedAlgorithmIDs:[-7,-257],authenticatorSelection:{residentKey:'required',userVerification:'required'}});
+    } else {
+      options = await generateAuthenticationOptions({rpID:passkeyHost,userVerification:'required'});
+    }
+    const token = randomHex(32);
+    const bucket = await sha256(env.BLOG_AUTH_SECRET+':passkey:'+ (request.headers.get('cf-connecting-ip') || 'unknown'));
+    await run(db,'DELETE FROM passkey_challenges WHERE expires<=?',now);
+    const result = await run(db,'INSERT INTO passkey_challenges(token,challenge,scope,bucket,expires) SELECT ?,?,?,?,? WHERE (SELECT COUNT(*) FROM passkey_challenges WHERE bucket=?)<30',await sha256(token),options.challenge,scope,bucket,now+300000,bucket);
+    if (!result.meta.changes) fail(429,'Bitte in fünf Minuten erneut versuchen.');
+    return json(options,200,{'Set-Cookie':challengeCookie+'='+token+'; Path=/; Secure; HttpOnly; SameSite=Strict; Max-Age=300'});
+  }
+  if (!action.endsWith('/verify')) fail(404,'Aktion unbekannt.');
+  const token = request.headers.get('cookie')?.match(/(?:^|;\s*)__Host-lennox_passkey=([a-f0-9]{64})(?:;|$)/)?.[1];
+  if (!token) fail(401,verificationMessage);
+  const row = await first(db,'DELETE FROM passkey_challenges WHERE token=? AND scope=? AND expires>? RETURNING challenge',await sha256(token),scope,now);
+  if (!row) fail(401,verificationMessage);
+  const checks = {response:data.credential,expectedOrigin:passkeyOrigin,expectedRPID:passkeyHost,expectedChallenge:row.challenge,requireUserVerification:true};
+  if (register) {
+    let result;
+    try { result = await verifyRegistrationResponse({...checks,supportedAlgorithmIDs:[-7,-257]}); } catch { fail(400,verificationMessage); }
+    if (!result.verified) fail(400,verificationMessage);
+    const key = result.registrationInfo.credential;
+    const saved = await run(db,'INSERT OR IGNORE INTO account_passkeys(id,user_id,public_key,counter,created_at) SELECT ?,user_id,?,?,? FROM blog_sessions WHERE token_hash=? AND expires_at>?',key.id,key.publicKey,key.counter,now,user.session_hash,now);
+    if (!saved.meta.changes) fail(409,'Passkey bereits registriert oder Sitzung abgelaufen.');
+    return json({ok:true});
+  }
+  const key = await first(db,'SELECT * FROM account_passkeys WHERE id=?',String(data.credential?.id || ''));
+  if (!key || (key.user_id === 'site-owner') !== (data.area === 'admin')) fail(401,verificationMessage);
+  const userHandle = btoa(key.user_id).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
+  if (data.credential?.response?.userHandle !== userHandle) fail(401,verificationMessage);
+  let verified;
+  try { verified = await verifyAuthenticationResponse({...checks,credential:{id:key.id,publicKey:new Uint8Array(key.public_key),counter:key.counter}}); } catch { fail(401,verificationMessage); }
+  if (!verified.verified) fail(401,verificationMessage);
+  const session = randomHex(32);
+  const results = await db.batch([
+    db.prepare('DELETE FROM blog_sessions WHERE expires_at<=?').bind(now),
+    db.prepare('INSERT INTO blog_sessions(token_hash,user_id,created_at,expires_at) SELECT ?,user_id,?,? FROM account_passkeys WHERE id=? AND counter=?').bind(await sha256(session),now,now+SESSION_SECONDS*1000,key.id,key.counter),
+    db.prepare('UPDATE account_passkeys SET counter=? WHERE id=? AND counter=?').bind(verified.authenticationInfo.newCounter,key.id,key.counter),
+  ]);
+  if (!results[1].meta.changes) fail(401,verificationMessage);
+  return json({ok:true},200,{'Set-Cookie':cookie(session)});
 }

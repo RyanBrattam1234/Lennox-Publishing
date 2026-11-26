@@ -71,7 +71,7 @@ bind('restore','click',async () => {if (!confirm('Das hochgeladene Cover entfern
 for (const id of ['reset','self']) bind(id,'submit',async () => {
   const fields=data(id);
   if (fields.password!==fields.repeat) throw Error('Die neuen Passwörter stimmen nicht überein.');
-  if (id==='reset' && !confirm('Passwort ändern und offene Redaktionssitzungen beenden?')) return;
+  if (id==='reset' && !confirm('Redaktionspasswort zurücksetzen, Sitzungen beenden und die Passkeys der Redaktion entfernen?')) return;
   delete fields.repeat;await api(id==='reset'?'owner/editor-password':'admin/password','PUT',fields);
   el(id).reset();if (id==='self') signedOut();
   return id==='reset'?'Redaktionspasswort geändert.':'Bitte mit deinem neuen Passwort anmelden.';
@@ -117,3 +117,5 @@ bind('newbook','submit',async () => {
   await refresh(result.id);
   return 'Buch veröffentlicht. Es erscheint unter „Weitere Bücher“.';
 });
+
+document.addEventListener('lennox:passkey-login',()=>refresh().catch(err=>{el('notice').textContent=err.message;}));

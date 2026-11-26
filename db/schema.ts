@@ -36,3 +36,18 @@ export const bookSettings = sqliteTable("book_settings", {
   mime: text("mime"),
   cover: blob("cover", {mode:"buffer"}),
 });
+
+export const passkeys = sqliteTable("account_passkeys", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull().references(() => users.id,{onDelete:"cascade"}),
+  publicKey: blob("public_key",{mode:"buffer"}).notNull(),
+  counter: integer("counter").notNull(),
+  createdAt: integer("created_at").notNull(),
+});
+export const ceremonies = sqliteTable("passkey_challenges", {
+  token: text("token").primaryKey(),
+  challenge: text("challenge").notNull(),
+  scope: text("scope").notNull(),
+  bucket: text("bucket").notNull(),
+  expires: integer("expires").notNull(),
+}, table => [index("passkey_challenge_expiry").on(table.expires)]);

@@ -110,3 +110,45 @@ test('Only owner publishes additions, repeated submit is safe and legacy catalog
   assert.equal((await c.request(path+'/'+id,'PUT',{...payload,title:'Neuer Titel'})).status,200);
   assert.equal((await catalog())[2].title,'Neuer Titel');
 });
+
+test('Passkey registration and signed login for both accounts',async t=>{
+  const {generateKeyPairSync,randomBytes,createHash,sign}=await import('node:crypto');
+  const {isoCBOR}=await import('@simplewebauthn/server/helpers');
+  const host='lennox-publishing-neugestaltung.cleanrowan2.chatgpt.site',origin='https://'+host;
+  const b64=data=>Buffer.from(data).toString('base64url');
+  const digest=data=>createHash('sha256').update(data).digest();
+  for(const area of ['admin','blog']){
+    const c=await setup();t.after(()=>c.DB.sqlite.close());
+    if(area==='admin'){
+      c.env.OWNER_BOOTSTRAP_SALT=c.env.BLOG_BOOTSTRAP_SALT;
+      c.env.OWNER_BOOTSTRAP_HASH=await passwordHash('owner-passkey-test',c.env.OWNER_BOOTSTRAP_SALT);
+      await c.request('/api/auth/login','POST',{username:'ryan',password:'owner-passkey-test'},{rememberCookie:true});
+    }else await c.login();
+    let session=c.cookie, challengeCookie='';
+    const post=(action,extra={})=>c.request('/api/passkeys/'+action,'POST',{area,...extra},{headers:{origin,cookie:[session,challengeCookie].filter(Boolean).join('; ')}});
+    async function options(flow){
+      const r=await post(flow+'/options');assert.equal(r.status,200);
+      challengeCookie=r.headers.get('set-cookie').split(';')[0];return r.json();
+    }
+    const registration=await options('register');
+    const pair=generateKeyPairSync('ec',{namedCurve:'P-256'}),jwk=pair.publicKey.export({format:'jwk'});
+    const cose=isoCBOR.encode(new Map([[1,2],[3,-7],[-1,1],[-2,new Uint8Array(Buffer.from(jwk.x,'base64url'))],[-3,new Uint8Array(Buffer.from(jwk.y,'base64url'))]]));
+    const id=randomBytes(32),credential={id:b64(id),rawId:b64(id),type:'public-key',clientExtensionResults:{}};
+    const registrationBytes=Buffer.concat([digest(host),Buffer.from([69,0,0,0,0]),Buffer.alloc(16),Buffer.from([0,id.length]),id,cose]);
+    const attestation=isoCBOR.encode(new Map([['fmt','none'],['attStmt',new Map()],['authData',new Uint8Array(registrationBytes)]]));
+    const client=(type,opts)=>Buffer.from(JSON.stringify({type,origin,challenge:opts.challenge}));
+    const enrolled=await post('register/verify',{credential:{...credential,response:{attestationObject:b64(attestation),clientDataJSON:b64(client('webauthn.create',registration))}}});
+    assert.equal(enrolled.status,200,await enrolled.text());
+    session='';
+    const auth=await options('login');
+    const authData=Buffer.concat([digest(host),Buffer.from([5,0,0,0,1])]);
+    const clientData=client('webauthn.get',auth);
+    const signature=sign('sha256',Buffer.concat([authData,digest(clientData)]),pair.privateKey);
+    const assertion={credential:{...credential,response:{authenticatorData:b64(authData),clientDataJSON:b64(clientData),signature:b64(signature),userHandle:registration.user.id}}};
+    const finish=await post('login/verify',assertion);assert.equal(finish.status,200,await finish.text());
+    session=finish.headers.get('set-cookie').split(';')[0];
+    assert.equal((await post('login/verify',assertion)).status,401);
+    assert.equal((await c.request('/api/owner/account','GET',undefined,{headers:{cookie:session}})).status,area==='admin'?200:403);
+    assert.equal((await post('remove')).status,200);
+  }
+});
